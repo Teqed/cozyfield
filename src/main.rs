@@ -207,8 +207,8 @@ fn move_shapes(
         entity.1.speed_x += delta.x / mass;
         entity.1.speed_y += delta.y / mass;
         // Slightly draw each shape back to the center of the screen
-        entity.1.speed_x -= entity.0.translation.x * 0.001;
-        entity.1.speed_y -= entity.0.translation.y * 0.001;
+        entity.1.speed_x -= entity.0.translation.x * 0.003;
+        entity.1.speed_y -= entity.0.translation.y * 0.003;
         // Apply a slight damping to the speed
         entity.1.speed_x *= 0.9999;
         entity.1.speed_y *= 0.9999;
