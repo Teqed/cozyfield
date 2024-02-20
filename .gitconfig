@@ -1,0 +1,33 @@
+[pull]
+    ff = only
+[merge]
+    conflictstyle = zdiff3
+    keepbackup = false
+[rebase]
+    autosquash = true
+    autostash = true
+[push]
+    autoSetupRemote = true
+[init]
+    defaultBranch = main
+[commit]
+    verbose = true
+[rerere]
+    enabled = true
+[help]
+    autocorrect = 10
+[core]
+    pager = delta
+[diff]
+    algorithm = histogram
+    submodule = log
+[transfer]
+    fsckobjects = true
+[fetch]
+    fsckobjects = true
+[receive]
+    fsckObjects = true
+[status]
+    submoduleSummary = true
+[submodule]
+    recurse = true

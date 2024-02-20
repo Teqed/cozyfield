@@ -1,2 +1,2 @@
 # cozyfield
- CozyField simulates the numerical integration of mathematical fields.
+ CozyField solves dynamical systems with nonlinear differential equations.
