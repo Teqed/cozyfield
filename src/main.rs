@@ -124,15 +124,12 @@ fn setup(
 #[derive(Component)]
 struct System {
     peaks: Vec<Peak>,               // Positions of the centers of divergence
-                               // and their amplitudes 'a' in the Gaussian function
-    width: f32,                // 'c' in the Gaussian function
+                               // and their amplitudes
     grid: Grid,                // 3D array to store the combined Gaussian influences
     resolution: Resolution,    // Defines the resolution of the grid (width, height)
     cell_size: f32,            // The physical size of each cell in the grid
 }
 struct Peak {
-    x: f32,
-    y: f32,
     grid_x: usize,
     grid_y: usize,
     amplitude: f32,
@@ -147,7 +144,6 @@ impl System {
     fn new() -> Self {
         Self {
             peaks: Vec::new(),
-            width: 150.,
             grid: Grid(vec![SubGrid(vec![Vec2 { x: 0., y: 0. }; DIMENSION]); DIMENSION]),
             resolution: Resolution {
                 width: DIMENSION,
@@ -173,8 +169,6 @@ impl System {
     }
     fn collect_peak(&mut self, peak_x: f32, peak_y: f32, peak_amplitude: f32) {
         self.peaks.push(Peak {
-            x: peak_x,
-            y: peak_y,
             grid_x: self.position_to_cell(peak_x),
             grid_y: self.position_to_cell(peak_y),
             amplitude: peak_amplitude,
@@ -241,14 +235,9 @@ impl System {
 #[allow(clippy::needless_pass_by_value)]
 fn move_shapes(
     mut query: Query<(&mut Transform, &mut Velocity, &Mesh2dHandle), With<Velocity>>,
-    mut system: Query<&mut System>,
+    system: Query<&mut System>,
 ) {
     for mut entity in &mut query {
-        // let delta = system
-        //     .single_mut()
-        //     .process_xy(entity.0.translation.x, entity.0.translation.y);
-        // Determine the slope of the cell by checking the difference in influence between the neighboring cells
-        // We'll need to check left and right, and up and down
         let mut delta = vec2(0., 0.);
         let cell_x = system.single().position_to_cell(entity.0.translation.x);
         let cell_y = system.single().position_to_cell(entity.0.translation.y);
@@ -272,9 +261,6 @@ fn move_shapes(
         let mass = entity.0.scale.x;
         entity.1.speed_x += delta.x / mass;
         entity.1.speed_y += delta.y / mass;
-        // Slightly draw each shape back to the center of the screen
-        // entity.1.speed_x -= entity.0.translation.x * 0.003;
-        // entity.1.speed_y -= entity.0.translation.y * 0.003;
         // Apply a slight damping to the speed
         entity.1.speed_x *= 0.99999;
         entity.1.speed_y *= 0.99999;
