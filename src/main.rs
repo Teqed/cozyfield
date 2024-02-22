@@ -16,6 +16,7 @@ struct Velocity {
 struct GridVelocity;
 #[derive(Clone)]
 struct SubGrid(Vec<Vec2>);
+#[derive(Clone)]
 struct Grid(Vec<SubGrid>);
 impl std::ops::Index<usize> for SubGrid {
     type Output = Vec2;
@@ -122,29 +123,37 @@ fn setup(
 }
 #[derive(Component)]
 struct System {
-    peaks: Vec<Vec2>,          // Positions of the centers of divergence
-    peak_amplitudes: Vec<f32>, // 'a' in the Gaussian function
+    peaks: Vec<Peak>,               // Positions of the centers of divergence
+                               // and their amplitudes 'a' in the Gaussian function
     width: f32,                // 'c' in the Gaussian function
     grid: Grid,                // 3D array to store the combined Gaussian influences
     resolution: Resolution,    // Defines the resolution of the grid (width, height)
     cell_size: f32,            // The physical size of each cell in the grid
 }
+struct Peak {
+    x: f32,
+    y: f32,
+    grid_x: usize,
+    grid_y: usize,
+    amplitude: f32,
+}
 struct Resolution {
     width: usize,
     height: usize,
 }
+const DIMENSION : usize = 100;
+const CELL : f32 = 10.;
 impl System {
     fn new() -> Self {
         Self {
             peaks: Vec::new(),
-            peak_amplitudes: Vec::new(),
-            width: 75.,
-            grid: Grid(vec![SubGrid(vec![Vec2 { x: 0., y: 0. }; 100]); 100]),
+            width: 150.,
+            grid: Grid(vec![SubGrid(vec![Vec2 { x: 0., y: 0. }; DIMENSION]); DIMENSION]),
             resolution: Resolution {
-                width: 100,
-                height: 100,
+                width: DIMENSION,
+                height: DIMENSION,
             },
-            cell_size: 10.,
+            cell_size: CELL,
         }
     }
     #[allow(
@@ -152,25 +161,68 @@ impl System {
         clippy::cast_precision_loss,
         clippy::cast_sign_loss
     )]
-    fn process_xy(&self, x: f32, y: f32) -> Vec2 {
-        let mut x = ((x + X_EXTENT) / self.cell_size) as usize;
-        let mut y = ((y + Y_EXTENT) / self.cell_size) as usize;
-        if x >= self.resolution.width {
-            x = self.resolution.width - 1;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
+    fn position_to_cell(&self, position: f32) -> usize {
+        if position < -X_EXTENT {
+            0
+        } else if position > X_EXTENT {
+            self.resolution.width - 1
+        } else {
+            ((position + X_EXTENT) / self.cell_size) as usize
         }
-        if y >= self.resolution.height {
-            y = self.resolution.height - 1;
-        }
-        self.grid[y][x]
     }
     fn collect_peak(&mut self, peak_x: f32, peak_y: f32, peak_amplitude: f32) {
-        self.peaks.push(Vec2::new(peak_x, peak_y));
-        self.peak_amplitudes.push(-peak_amplitude);
+        self.peaks.push(Peak {
+            x: peak_x,
+            y: peak_y,
+            grid_x: self.position_to_cell(peak_x),
+            grid_y: self.position_to_cell(peak_y),
+            amplitude: peak_amplitude,
+        });
     }
     fn clear_peaks(&mut self) {
         self.peaks.clear();
-        self.peak_amplitudes.clear();
-        self.grid = Grid(vec![SubGrid(vec![Vec2 { x: 0., y: 0. }; 100]); 100]);
+        // self.grid = Grid(vec![SubGrid(vec![Vec2 { x: 0., y: 0. }; 100]); 100]);        
+        // Have the boundaries absorb the heat
+        // The heat equation is a partial differential equation which describes the flow of heat in a given domain. For a 2D domain, it is given by the following equation:
+        // ∂u/∂t = α(∂²u/∂x² + ∂²u/∂y²)
+        // where u is the temperature, t is the time, x and y are the spatial coordinates, and α is the thermal diffusivity.
+        // The equation is solved numerically using the finite difference method, which consists in discretizing the domain into a grid and approximating the derivatives by finite differences. The discretization scheme used here is the Crank-Nicolson method, which is unconditionally stable and second-order accurate in time and space.
+        // The resulting system of equations is then solved using the Conjugate Gradient method.
+        for _ in 0..10 {
+            for x in 0..self.resolution.width {
+                self.grid[0][x] = Vec2::new(-0.1, -0.1);
+                self.grid[self.resolution.height - 1][x] = Vec2::new(-0.1, -0.1);
+            }
+            for y in 0..self.resolution.height {
+                self.grid[y][0] = Vec2::new(-0.1, -0.1);
+                self.grid[y][self.resolution.width - 1] = Vec2::new(-0.1, -0.1);
+            }
+            let thermal_diffusivity = 0.1; // Thermal diffusivity
+            let dt = 2.;   // Time step
+            let dx = 1_f32; // Spatial step
+            let dy = 1_f32; // Spatial step
+            let alpha = thermal_diffusivity * dt / (dx * dy);
+            let mut new_grid = self.grid.clone();
+            for x in 1..self.resolution.width - 1 {
+                for y in 1..self.resolution.height - 1 {
+                    let laplacian = (self.grid[y][x + 1] + self.grid[y][x - 1] - 2. * self.grid[y][x])
+                        / dx.powi(2)
+                        + (self.grid[y + 1][x] + self.grid[y - 1][x] - 2. * self.grid[y][x])
+                            / dy.powi(2);
+                    new_grid[y][x] = self.grid[y][x] + alpha * laplacian;
+                }
+            }
+            self.grid = new_grid;
+        }
+        // Cool down the grid
+        for x in 0..self.resolution.width {
+            for y in 0..self.resolution.height {
+                if self.grid[y][x].length() > 0. {
+                    self.grid[y][x] *= 0.99;
+                }
+            }
+        }
     }
     #[allow(
         clippy::cast_possible_truncation,
@@ -178,19 +230,11 @@ impl System {
         clippy::cast_sign_loss
     )]
     fn compute_influence(&mut self) {
-        for (i, peak) in self.peaks.iter().enumerate() {
-            for x in 0..self.resolution.width {
-                let x_coord = (x as f32).mul_add(self.cell_size, -X_EXTENT);
-                for y in 0..self.resolution.height {
-                    let y_coord = (y as f32).mul_add(self.cell_size, -Y_EXTENT);
-                    let distance = vec2(x_coord + 5., y_coord + 5.).distance(*peak);
-                    let amplitude = self.peak_amplitudes[i] * 0.01;
-                    let influence = amplitude * (-distance.powi(2) / (2. * self.width.powi(2))).exp();
-                    let x_influence = (x_coord - peak.x) * influence;
-                    let y_influence = (y_coord - peak.y) * influence;
-                    self.grid[y][x] += vec2(x_influence, y_influence);
-                }
-            }
+        for peak in &self.peaks {
+            // Find the grid cell that contains the peak
+            let amplitude = peak.amplitude;
+            // Deposit the peak's influence into the grid cell
+            self.grid[peak.grid_y][peak.grid_x] += vec2(amplitude, amplitude);
         }
     }
 }
@@ -200,18 +244,40 @@ fn move_shapes(
     mut system: Query<&mut System>,
 ) {
     for mut entity in &mut query {
-        let delta = system
-            .single_mut()
-            .process_xy(entity.0.translation.x, entity.0.translation.y);
+        // let delta = system
+        //     .single_mut()
+        //     .process_xy(entity.0.translation.x, entity.0.translation.y);
+        // Determine the slope of the cell by checking the difference in influence between the neighboring cells
+        // We'll need to check left and right, and up and down
+        let mut delta = vec2(0., 0.);
+        let cell_x = system.single().position_to_cell(entity.0.translation.x);
+        let cell_y = system.single().position_to_cell(entity.0.translation.y);
+        if cell_x < 1 || cell_x >= system.single().resolution.width - 1
+            || cell_y < 1
+            || cell_y >= system.single().resolution.height - 1
+        {
+            // If the shape is outside the grid, move it back to the center
+            entity.1.speed_x -= entity.0.translation.x * 0.001;
+            entity.1.speed_y -= entity.0.translation.y * 0.001;
+            entity.0.translation.x += entity.1.speed_x;
+            entity.0.translation.y += entity.1.speed_y;
+            continue;
+        }
+        let left_influence = system.single().grid[cell_y][cell_x - 1];
+        let right_influence = system.single().grid[cell_y][cell_x + 1];
+        let up_influence = system.single().grid[cell_y - 1][cell_x];
+        let down_influence = system.single().grid[cell_y + 1][cell_x];
+        delta.x = (right_influence - left_influence).x;
+        delta.y = (down_influence - up_influence).y;
         let mass = entity.0.scale.x;
         entity.1.speed_x += delta.x / mass;
         entity.1.speed_y += delta.y / mass;
         // Slightly draw each shape back to the center of the screen
-        entity.1.speed_x -= entity.0.translation.x * 0.003;
-        entity.1.speed_y -= entity.0.translation.y * 0.003;
+        // entity.1.speed_x -= entity.0.translation.x * 0.003;
+        // entity.1.speed_y -= entity.0.translation.y * 0.003;
         // Apply a slight damping to the speed
-        entity.1.speed_x *= 0.9999;
-        entity.1.speed_y *= 0.9999;
+        entity.1.speed_x *= 0.99999;
+        entity.1.speed_y *= 0.99999;
         entity.0.translation.x += entity.1.speed_x;
         entity.0.translation.y += entity.1.speed_y;
         if entity.0.translation.x > X_EXTENT - 10. || entity.0.translation.x < -X_EXTENT + 10. {
@@ -258,12 +324,25 @@ fn change_dot_color(
     for (entity, _) in &mut dots.iter() {
         commands.entity(entity).despawn();
     }
-    for x in -10..10 {
-        for y in -10..10 {
-            let translation = Vec3::new(x as f32 * 50., y as f32 * 50., -10.);
-            let grid_velocity = system.single().process_xy(translation.x, translation.y);
-            let radius = grid_velocity.length().mul_add(10000., 5.);
-            let dot_radius = std::ops::Mul::mul(radius, 0.0005).clamp(0.5, 20.);
+    // for x in -10..10 {
+    //     for y in -10..10 {
+    //         let translation = Vec3::new(x as f32 * 50., y as f32 * 50., -10.);
+    for x in 0..system.single().resolution.width {
+        if x % 4 != 0 {
+            continue;
+        }
+        for y in 0..system.single().resolution.height {
+            if y % 4 != 0 {
+                continue;
+            }
+            let translation = Vec3::new(
+                (x as f32 - system.single().resolution.width as f32 / 2.).mul_add(system.single().cell_size, system.single().cell_size / 2.),
+                (y as f32 - system.single().resolution.height as f32 / 2.).mul_add(system.single().cell_size, system.single().cell_size / 2.),
+                -10.,
+            );
+            let grid_velocity = system.single().grid[y][x];
+            let radius = grid_velocity.length().mul_add(10., 5.);
+            let dot_radius = radius.abs().clamp(0.2, 20.);
             let dot = Mesh2dHandle(meshes.add(Circle { radius: dot_radius }));
             let hue = (grid_velocity.y.atan2(grid_velocity.x) + std::f32::consts::PI)
                 / (2. * std::f32::consts::PI);
