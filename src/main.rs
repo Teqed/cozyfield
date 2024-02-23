@@ -20,26 +20,28 @@ struct Grid {
 }
 impl Grid {
     fn new(width: usize, height: usize) -> Self {
-        Self { data: vec![vec![0.; width]; height] }
+        Self {
+            data: vec![vec![0.; width]; height],
+        }
     }
     fn diffuse(&mut self, diffusion_rate: f32) {
-
         let data_length = self.data.len();
         for x in 0..data_length {
             self.data[x][0] *= 0.75;
-            self.data[x][data_length-1] *= 0.75;
+            self.data[x][data_length - 1] *= 0.75;
             self.data[0][x] *= 0.75;
-            self.data[data_length-1][x] *= 0.75;
+            self.data[data_length - 1][x] *= 0.75;
         }
-        for y in 1..self.data.len()-1 {
-            for x in 1..self.data[0].len()-1 {
+        for y in 1..self.data.len() - 1 {
+            for x in 1..self.data[0].len() - 1 {
                 let current = self.data[y][x];
-                let left = self.data[y][x-1];
-                let right = self.data[y][x+1];
-                let top = self.data[y-1][x];
-                let bottom = self.data[y+1][x];
+                let left = self.data[y][x - 1];
+                let right = self.data[y][x + 1];
+                let top = self.data[y - 1][x];
+                let bottom = self.data[y + 1][x];
 
-                let new_value = (left + right + top + bottom).mul_add(diffusion_rate, current) / 4.0_f32.mul_add(diffusion_rate, 1.);
+                let new_value = (left + right + top + bottom).mul_add(diffusion_rate, current)
+                    / 4.0_f32.mul_add(diffusion_rate, 1.);
                 self.data[y][x] = new_value;
             }
         }
@@ -133,8 +135,8 @@ fn setup(
 struct System {
     peaks: Vec<Peak>,
     grid: Grid,
-    resolution: Resolution,    // Defines the resolution of the grid (width, height)
-    cell_size: f32,            // The size of each cell in the grid
+    resolution: Resolution, // Defines the resolution of the grid (width, height)
+    cell_size: f32,         // The size of each cell in the grid
 }
 struct Peak {
     grid_x: usize,
@@ -145,8 +147,8 @@ struct Resolution {
     width: usize,
     height: usize,
 }
-const DIMENSION : usize = 100;
-const CELL : f32 = 10.;
+const DIMENSION: usize = 100;
+const CELL: f32 = 10.;
 impl System {
     fn new() -> Self {
         Self {
@@ -164,7 +166,11 @@ impl System {
         clippy::cast_precision_loss,
         clippy::cast_sign_loss
     )]
-    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss, clippy::cast_sign_loss)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss
+    )]
     fn position_to_cell(&self, position: f32) -> usize {
         if position < -X_EXTENT {
             0
@@ -212,7 +218,8 @@ fn move_shapes(
         let mut delta = vec2(0., 0.);
         let cell_x = system.single().position_to_cell(entity.0.translation.x);
         let cell_y = system.single().position_to_cell(entity.0.translation.y);
-        if cell_x < 1 || cell_x >= system.single().resolution.width - 1
+        if cell_x < 1
+            || cell_x >= system.single().resolution.width - 1
             || cell_y < 1
             || cell_y >= system.single().resolution.height - 1
         {
@@ -229,7 +236,7 @@ fn move_shapes(
         let down_influence = system.single().grid.data[cell_y + 1][cell_x];
         delta.x = right_influence - left_influence;
         delta.y = down_influence - up_influence;
-        let mass = entity.0.scale.x  * 0.1;
+        let mass = entity.0.scale.x * 0.1;
         entity.1.speed_x += delta.x / mass;
         entity.1.speed_y += delta.y / mass;
         // Apply a slight damping to the speed
@@ -294,8 +301,10 @@ fn change_dot_color(
                 continue;
             }
             let translation = Vec3::new(
-                (x as f32 - system.single().resolution.width as f32 / 2.).mul_add(system.single().cell_size, system.single().cell_size / 2.),
-                (y as f32 - system.single().resolution.height as f32 / 2.).mul_add(system.single().cell_size, system.single().cell_size / 2.),
+                (x as f32 - system.single().resolution.width as f32 / 2.)
+                    .mul_add(system.single().cell_size, system.single().cell_size / 2.),
+                (y as f32 - system.single().resolution.height as f32 / 2.)
+                    .mul_add(system.single().cell_size, system.single().cell_size / 2.),
                 -10.,
             );
             let grid_velocity = system.single().grid.data[y][x];
