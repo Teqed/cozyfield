@@ -339,3 +339,41 @@ fn main() {
         .add_systems(Update, change_dot_color.after(add_peaks))
         .run();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_position_to_cell() {
+        let system = crate::System::new();
+        let dimension_half = DIMENSION / 2;
+        assert_eq!(system.position_to_cell(-500.), 0);
+        assert_eq!(system.position_to_cell(500.), DIMENSION);
+        assert_eq!(system.position_to_cell(0.), dimension_half);
+    }
+    #[test]
+    fn test_collect_peak() {
+        let mut system = crate::System::new();
+        system.collect_peak(0., 0., 1.);
+        assert_eq!(system.peaks.len(), 1);
+        assert_eq!(system.peaks[0].grid_x, 50);
+        assert_eq!(system.peaks[0].grid_y, 50);
+        let error_margin = f32::EPSILON;
+        assert!((system.peaks[0].amplitude - 1.).abs() < error_margin);
+    }
+    #[test]
+    fn test_clear_peaks() {
+        let mut system = crate::System::new();
+        system.collect_peak(0., 0., 1.);
+        system.clear_peaks();
+        assert_eq!(system.peaks.len(), 0);
+    }
+    #[test]
+    fn test_compute_influence() {
+        let mut system = crate::System::new();
+        system.collect_peak(0., 0., 1.);
+        system.compute_influence();
+        let error_margin = f32::EPSILON;
+        assert!((system.grid.data[50][50] - 10.).abs() < error_margin);
+    }
+}
