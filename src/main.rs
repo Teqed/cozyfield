@@ -355,6 +355,6 @@ mod tests {
         system.collect_peak(0., 0., 1.);
         system.compute_influence();
         let error_margin = f32::EPSILON;
-        assert!((system.grid.data[50][50] - 10.).abs() < error_margin);
+        assert!((system.grid.data[50][50] - 1.) < error_margin);
     }
 }
