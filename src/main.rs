@@ -7,6 +7,10 @@ use bevy::{
     },
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
 };
+const X_EXTENT: f32 = 500.;
+const Y_EXTENT: f32 = 500.;
+const DIMENSION: usize = 100;
+const CELL_SIZE: f32 = 10.;
 #[derive(Component)]
 struct Velocity {
     speed_x: f32,
@@ -25,30 +29,31 @@ impl Grid {
         }
     }
     fn diffuse(&mut self, diffusion_rate: f32) {
-        let data_length = self.data.len();
-        for x in 0..data_length {
-            self.data[x][0] *= 0.75;
-            self.data[x][data_length - 1] *= 0.75;
-            self.data[0][x] *= 0.75;
-            self.data[data_length - 1][x] *= 0.75;
+        // Assume the grid is square
+        let width = self.data.len();
+        if width == 0 {
+            return;
         }
-        for y in 1..self.data.len() - 1 {
-            for x in 1..self.data[0].len() - 1 {
-                let current = self.data[y][x];
-                let left = self.data[y][x - 1];
-                let right = self.data[y][x + 1];
-                let top = self.data[y - 1][x];
-                let bottom = self.data[y + 1][x];
-
-                let new_value = (left + right + top + bottom).mul_add(diffusion_rate, current)
-                    / 4.0_f32.mul_add(diffusion_rate, 1.);
-                self.data[y][x] = new_value;
+        let divisor = 4.0_f32.mul_add(diffusion_rate, 1.0);
+        for y in 1..width - 1 {
+            for x in 1..width - 1 {
+                self.data[y][x] = (self.data[y][x - 1]
+                    + self.data[y][x + 1]
+                    + self.data[y - 1][x]
+                    + self.data[y + 1][x])
+                    .mul_add(diffusion_rate, self.data[y][x])
+                    / divisor;
             }
+        }
+        let edge_rate = 0.75;
+        for x in 0..width {
+            self.data[x][0] *= edge_rate;
+            self.data[x][width - 1] *= edge_rate;
+            self.data[0][x] *= edge_rate;
+            self.data[width - 1][x] *= edge_rate;
         }
     }
 }
-const X_EXTENT: f32 = 500.;
-const Y_EXTENT: f32 = 500.;
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -133,22 +138,20 @@ fn setup(
 }
 #[derive(Component)]
 struct System {
-    peaks: Vec<Peak>,
+    peaks: Vec<Matter>,
     grid: Grid,
     resolution: Resolution, // Defines the resolution of the grid (width, height)
     cell_size: f32,         // The size of each cell in the grid
 }
-struct Peak {
+struct Matter {
     grid_x: usize,
     grid_y: usize,
-    amplitude: f32,
+    mass: f32,
 }
 struct Resolution {
     width: usize,
     height: usize,
 }
-const DIMENSION: usize = 100;
-const CELL: f32 = 10.;
 impl System {
     fn new() -> Self {
         Self {
@@ -158,19 +161,10 @@ impl System {
                 width: DIMENSION,
                 height: DIMENSION,
             },
-            cell_size: CELL,
+            cell_size: CELL_SIZE,
         }
     }
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_precision_loss,
-        clippy::cast_sign_loss
-    )]
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_precision_loss,
-        clippy::cast_sign_loss
-    )]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn position_to_cell(&self, position: f32) -> usize {
         if position < -X_EXTENT {
             0
@@ -181,26 +175,15 @@ impl System {
         }
     }
     fn collect_peak(&mut self, peak_x: f32, peak_y: f32, peak_amplitude: f32) {
-        self.peaks.push(Peak {
+        self.peaks.push(Matter {
             grid_x: self.position_to_cell(peak_x),
             grid_y: self.position_to_cell(peak_y),
-            amplitude: peak_amplitude,
+            mass: peak_amplitude,
         });
     }
-    fn clear_peaks(&mut self) {
-        self.peaks.clear();
-    }
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_precision_loss,
-        clippy::cast_sign_loss
-    )]
     fn compute_influence(&mut self) {
         for peak in &self.peaks {
-            // Find the grid cell that contains the peak
-            let amplitude = peak.amplitude;
-            // Deposit the peak's influence into the grid cell
-            self.grid.data[peak.grid_y][peak.grid_x] += amplitude * 10.;
+            self.grid.data[peak.grid_y][peak.grid_x] += peak.mass;
         }
     }
     fn diffuse(&mut self, steps: usize, diffusion_rate: f32) {
@@ -211,9 +194,11 @@ impl System {
 }
 #[allow(clippy::needless_pass_by_value)]
 fn move_shapes(
+    time: Res<Time>,
     mut query: Query<(&mut Transform, &mut Velocity, &Mesh2dHandle), With<Velocity>>,
     system: Query<&mut System>,
 ) {
+    let time_delta = time.delta_seconds();
     for mut entity in &mut query {
         let mut delta = vec2(0., 0.);
         let cell_x = system.single().position_to_cell(entity.0.translation.x);
@@ -236,30 +221,11 @@ fn move_shapes(
         let down_influence = system.single().grid.data[cell_y + 1][cell_x];
         delta.x = right_influence - left_influence;
         delta.y = down_influence - up_influence;
-        let mass = entity.0.scale.x * 0.1;
+        let mass = entity.0.scale.x;
         entity.1.speed_x += delta.x / mass;
         entity.1.speed_y += delta.y / mass;
-        // Apply a slight damping to the speed
-        // entity.1.speed_x *= 0.99999;
-        // entity.1.speed_y *= 0.99999;
-        entity.0.translation.x += entity.1.speed_x;
-        entity.0.translation.y += entity.1.speed_y;
-        // if entity.0.translation.x > X_EXTENT - 10. || entity.0.translation.x < -X_EXTENT + 10. {
-        //     entity.1.speed_x = -entity.1.speed_x * 0.8;
-        // }
-        // if entity.0.translation.y > Y_EXTENT - 10. || entity.0.translation.y < -Y_EXTENT + 10. {
-        //     entity.1.speed_y = -entity.1.speed_y * 0.8;
-        // }
-        // if entity.0.translation.x >= X_EXTENT {
-        //     entity.0.translation.x = X_EXTENT - 1.;
-        // } else if entity.0.translation.x <= -X_EXTENT {
-        //     entity.0.translation.x = -X_EXTENT + 1.;
-        // }
-        // if entity.0.translation.y >= Y_EXTENT {
-        //     entity.0.translation.y = Y_EXTENT - 1.;
-        // } else if entity.0.translation.y <= -Y_EXTENT {
-        //     entity.0.translation.y = -Y_EXTENT + 1.;
-        // }
+        entity.0.translation.x += entity.1.speed_x * time_delta;
+        entity.0.translation.y += entity.1.speed_y * time_delta;
     }
 }
 #[allow(clippy::needless_pass_by_value)]
@@ -267,7 +233,7 @@ fn add_peaks(
     mut system: Query<&mut System>,
     query: Query<(&Transform, &Mesh2dHandle), With<Velocity>>,
 ) {
-    system.single_mut().clear_peaks();
+    system.single_mut().peaks.clear();
     for entity in &mut query.iter() {
         let radius = entity.0.scale.x;
         system
@@ -275,7 +241,16 @@ fn add_peaks(
             .collect_peak(entity.0.translation.x, entity.0.translation.y, radius);
     }
     system.single_mut().compute_influence();
-    system.single_mut().diffuse(30, 0.8);
+}
+#[allow(
+    clippy::needless_pass_by_value,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation
+)]
+fn diffuse(time: Res<Time>, mut system: Query<&mut System>) {
+    let time_delta = time.delta_seconds();
+    let steps = (time_delta * 60.).round() as usize;
+    system.single_mut().diffuse(steps, 0.8);
 }
 #[allow(clippy::needless_pass_by_value, clippy::cast_precision_loss)]
 fn change_dot_color(
@@ -289,9 +264,6 @@ fn change_dot_color(
     for (entity, _) in &mut dots.iter() {
         commands.entity(entity).despawn();
     }
-    // for x in -10..10 {
-    //     for y in -10..10 {
-    //         let translation = Vec3::new(x as f32 * 50., y as f32 * 50., -10.);
     for x in 0..system.single().resolution.width {
         if x % 4 != 0 {
             continue;
@@ -345,7 +317,8 @@ fn main() {
         .add_plugins(PluginBackendProvided)
         .add_systems(Startup, setup)
         .add_systems(Update, (add_peaks, move_shapes.after(add_peaks)))
-        .add_systems(Update, change_dot_color.after(add_peaks))
+        .add_systems(Update, diffuse.after(add_peaks).before(move_shapes))
+        // .add_systems(Update, change_dot_color.after(add_peaks))
         .run();
 }
 
@@ -368,14 +341,7 @@ mod tests {
         assert_eq!(system.peaks[0].grid_x, 50);
         assert_eq!(system.peaks[0].grid_y, 50);
         let error_margin = f32::EPSILON;
-        assert!((system.peaks[0].amplitude - 1.).abs() < error_margin);
-    }
-    #[test]
-    fn test_clear_peaks() {
-        let mut system = crate::System::new();
-        system.collect_peak(0., 0., 1.);
-        system.clear_peaks();
-        assert_eq!(system.peaks.len(), 0);
+        assert!((system.peaks[0].mass - 1.).abs() < error_margin);
     }
     #[test]
     fn test_compute_influence() {
