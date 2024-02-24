@@ -222,8 +222,18 @@ fn move_shapes(
         delta.x = right_influence - left_influence;
         delta.y = down_influence - up_influence;
         let mass = entity.0.scale.x;
-        entity.1.speed_x += delta.x / mass;
-        entity.1.speed_y += delta.y / mass;
+        if mass > 0. {
+            entity.1.speed_x += delta.x / mass;
+            entity.1.speed_y += delta.y / mass;
+        }
+        let lensing_strength = 0.1;
+        let lensing_x = system.single().grid.data[cell_y][cell_x + 1]
+            - system.single().grid.data[cell_y][cell_x - 1];
+        let lensing_y = system.single().grid.data[cell_y + 1][cell_x]
+            - system.single().grid.data[cell_y - 1][cell_x];
+        entity.1.speed_x -= lensing_x * lensing_strength;
+        entity.1.speed_y -= lensing_y * lensing_strength;
+
         entity.0.translation.x += entity.1.speed_x * time_delta;
         entity.0.translation.y += entity.1.speed_y * time_delta;
     }
