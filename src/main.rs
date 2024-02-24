@@ -318,7 +318,7 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(Update, (add_peaks, move_shapes.after(add_peaks)))
         .add_systems(Update, diffuse.after(add_peaks).before(move_shapes))
-        // .add_systems(Update, change_dot_color.after(add_peaks))
+        .add_systems(Update, change_dot_color.after(add_peaks))
         .run();
 }
 
