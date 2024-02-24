@@ -227,10 +227,8 @@ fn move_shapes(
             entity.1.speed_y += delta.y / mass;
         }
         let lensing_strength = 0.1;
-        let lensing_x = system.single().grid.data[cell_y][cell_x + 1]
-            - system.single().grid.data[cell_y][cell_x - 1];
-        let lensing_y = system.single().grid.data[cell_y + 1][cell_x]
-            - system.single().grid.data[cell_y - 1][cell_x];
+        let lensing_x = right_influence - left_influence;
+        let lensing_y = down_influence - up_influence;
         entity.1.speed_x -= lensing_x * lensing_strength;
         entity.1.speed_y -= lensing_y * lensing_strength;
 
